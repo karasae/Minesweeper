@@ -1,4 +1,4 @@
-module minesweeper(clk, rst, conf_mov, diff_sel, userx, usery, VGA_R, VGA_G, VGA_B, VGA_HS, VGA_VS, VGA_BLANK, VGA_SYNC, VGA_CLK, test);
+module minesweeper(clk, rst, conf_mov, inx, iny, in_type, VGA_R, VGA_G, VGA_B, VGA_HS, VGA_VS, VGA_BLANK, VGA_SYNC, VGA_CLK, test);
 
 	input clk, rst;
 	output [9:0] VGA_R;
@@ -26,10 +26,17 @@ module minesweeper(clk, rst, conf_mov, diff_sel, userx, usery, VGA_R, VGA_G, VGA
 	reg [2:0] plc_x;
 	reg [2:0] plc_y;
 	
-	input [6:0] userx;
-	input [6:0] usery;
+	input [3:0] inx;
+	input [3:0] iny;
+	wire [6:0] userx;
+	wire [6:0] usery;
+	assign userx = {1'b0, 1'b0, 1'b0, inx};
+	assign usery = {1'b0, 1'b0, 1'b0, iny};
 	input conf_mov;
-	input [1:0] diff_sel;
+	input [3:0] in_type;
+	
+	wire [1:0] diff_sel;
+	assign diff_sel = 2'b00;
 	
 	reg init_srand;
 	wire [15:0] rand_num;
@@ -46,6 +53,9 @@ module minesweeper(clk, rst, conf_mov, diff_sel, userx, usery, VGA_R, VGA_G, VGA
 	reg [6:0] boardy;
 	reg [4:0] genx;
 	reg [4:0] geny;
+	
+	reg[6:0] rstx;
+	reg[6:0] rsty;
 	
 	reg [3:0] bd_in;
 	wire [3:0] ez_bd_out;
@@ -108,12 +118,18 @@ module minesweeper(clk, rst, conf_mov, diff_sel, userx, usery, VGA_R, VGA_G, VGA
 					PLC_X_INC = 6'd18,
 					PLC_Y_INC = 6'd19,
 					WAIT_MOV = 6'd29,
-					WR_BOARD = 6'd30;
+					WR_BOARD = 6'd30,
+					RST_START = 6'd32,
+					RST_Y_CON = 6'd33,
+					RST_X_CON = 6'd34,
+					WR_RST = 6'd35,
+					RST_X_INC = 6'd36,
+					RST_Y_INC = 6'd37;
 	
 	always @(posedge clk or negedge rst)
 	begin
 		if (rst == 1'b0)
-			S <= INIT_RAND;
+			S <= RST_START;
 		else
 			S <= NS;
 	end
@@ -238,6 +254,24 @@ module minesweeper(clk, rst, conf_mov, diff_sel, userx, usery, VGA_R, VGA_G, VGA
 					NS = WR_BOARD;
 			end
 			WR_BOARD: NS = START_REV;//PLC_Y_CON;
+			RST_START: NS = RST_Y_CON;
+			RST_Y_CON:
+			begin
+				if(rsty < 9)
+					NS = RST_X_CON;
+				else
+					NS = START_REV;
+			end
+			RST_X_CON:
+			begin
+				if(rstx < 9)
+					NS = WR_RST;
+				else
+					NS = RST_Y_INC;
+			end
+			WR_RST: NS = RST_X_INC;
+			RST_X_INC: NS = RST_X_CON;
+			RST_Y_INC: NS = RST_Y_CON;
 			EXIT: NS = EXIT;
 		endcase
 	end
@@ -428,8 +462,32 @@ module minesweeper(clk, rst, conf_mov, diff_sel, userx, usery, VGA_R, VGA_G, VGA
 					plc_y <= 0;
 					
 					bd_wren <= 1;
-					bd_in <= 9;
+					bd_in <= in_type;
 				end
+				RST_START:
+				begin
+					plot <= 0;
+					num_mines <= 0;
+					bd_wren <= 0;
+					init_srand <= 0;
+					curr_diff <= diff_sel;
+					rstx <= 0;
+					rsty <= 0;
+				end
+				RST_Y_CON: rstx <= 0;
+				WR_RST:
+				begin
+					bd_wren <= 1;
+					boardx <= rstx;
+					boardy <= rsty;
+					bd_in <= 0;
+				end
+				RST_X_INC:
+				begin
+					rstx <= rstx + 1;
+					bd_wren <= 0;
+				end
+				RST_Y_INC: rsty <= rsty + 1;
 				EXIT:
 				begin
 					plot <= 0;
